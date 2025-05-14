@@ -6,10 +6,10 @@ services:
     ports:
       - "11112:11112"
     volumes:
-      - ./data/storage:/data/storage
-      - ./data/zips:/data/zips
-      - ./data/keys:/data/keys
-      - ./data/logs:/data/logs
+      - ./mounts/storage:/data/storage
+      - ./mounts/zips:/data/zips
+      - ./mounts/keys:/data/keys
+      - ./mounts/logs:/data/logs
     environment:
       - DICOM_RECEIVER_PORT=${DICOM_RECEIVER_PORT}
       - DICOM_RECEIVER_AE_TITLE=${DICOM_RECEIVER_AE_TITLE}
