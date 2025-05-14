@@ -2,8 +2,9 @@
 services:
   dicom-receiver:
     image: amrshadid/laminate-proxy:latest
+    platform: linux/amd64
     ports:
-      - "11112:11112"
+       - "${DICOM_RECEIVER_PORT:-11112}:11112"
     volumes:
       - ./mounts/storage:/data/storage
       - ./mounts/zips:/data/zips

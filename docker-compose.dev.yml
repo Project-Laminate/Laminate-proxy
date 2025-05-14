@@ -3,8 +3,9 @@ version: '3.8'
 services:
   dicom-receiver:
     build: .
+    platform: linux/amd64
     ports:
-      - "11112:11112"
+      - "${DICOM_RECEIVER_PORT:-11112}:11112"
     volumes:
       - ./data/storage:/data/storage
       - ./data/zips:/data/zips
