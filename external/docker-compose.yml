@@ -1,8 +1,7 @@
-version: '3.8'
 
 services:
   dicom-receiver:
-    build: amrshadid/laminate-proxy:latest
+    image: amrshadid/laminate-proxy:latest
     ports:
       - "11112:11112"
     volumes:
