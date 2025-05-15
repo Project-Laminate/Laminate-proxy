@@ -40,8 +40,19 @@ class DicomEncryptor:
         # Map to store original patient info for later retrieval
         self.patient_info_map_file = self.storage_dir / PATIENT_INFO_MAP_FILENAME
         self.patient_info_map = self._load_patient_info_map()
+        
+        # Store encrypted values to ensure consistency
+        self.encrypted_values_map = {}
+        self._extract_encrypted_values()
+        
         self.patient_map_lock = threading.Lock()
     
+    def _extract_encrypted_values(self):
+        """Extract encrypted values from the patient info map for consistency"""
+        for study_uid, tags in self.patient_info_map.items():
+            if study_uid not in self.encrypted_values_map:
+                self.encrypted_values_map[study_uid] = {}
+                
     def _load_or_create_key(self) -> bytes:
         """Load existing encryption key or create a new one"""
         key_path = Path(self.key_file)
@@ -60,7 +71,15 @@ class DicomEncryptor:
         if self.patient_info_map_file.exists():
             try:
                 with open(self.patient_info_map_file, 'r') as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    
+                    # Check if it's the new format (dictionary with patient_info and encrypted_values)
+                    if isinstance(data, dict) and 'patient_info' in data:
+                        self.encrypted_values_map = data.get('encrypted_values', {})
+                        return data['patient_info']
+                    else:
+                        # It's the old format (just patient info)
+                        return data
             except json.JSONDecodeError:
                 logger.error(f"Error loading patient info map, creating new one")
                 return {}
@@ -69,8 +88,13 @@ class DicomEncryptor:
     def _save_patient_info_map(self):
         """Save the patient information mapping to disk"""
         with self.patient_map_lock:
+            # Save both the original info and encrypted values
             with open(self.patient_info_map_file, 'w') as f:
-                json.dump(self.patient_info_map, f, indent=2)
+                combined_map = {
+                    'patient_info': self.patient_info_map,
+                    'encrypted_values': self.encrypted_values_map
+                }
+                json.dump(combined_map, f, indent=2)
     
     def encrypt_dataset(self, dataset: Dataset) -> Dict:
         """
@@ -90,23 +114,35 @@ class DicomEncryptor:
         # Get study UID for mapping
         study_uid = dataset.StudyInstanceUID
         
+        # Initialize maps if needed
+        if study_uid not in self.patient_info_map:
+            self.patient_info_map[study_uid] = {}
+        
+        if study_uid not in self.encrypted_values_map:
+            self.encrypted_values_map[study_uid] = {}
+        
         # Encrypt PII fields that exist in the dataset
         for tag in PII_TAGS:
             if hasattr(dataset, tag) and getattr(dataset, tag):
                 value = str(getattr(dataset, tag))
-                encrypted_value = self.fernet.encrypt(value.encode()).decode()
                 
                 # Store original value for later retrieval
-                if study_uid not in self.patient_info_map:
-                    self.patient_info_map[study_uid] = {}
-                
                 if tag not in self.patient_info_map[study_uid]:
                     self.patient_info_map[study_uid][tag] = value
+                
+                # Check if we've already encrypted this value
+                if tag in self.encrypted_values_map[study_uid]:
+                    # Reuse the existing encrypted value for consistency
+                    encrypted_value = self.encrypted_values_map[study_uid][tag]
+                else:
+                    # New value to encrypt - generate and store it
+                    encrypted_value = self.fernet.encrypt(value.encode()).decode()
+                    self.encrypted_values_map[study_uid][tag] = encrypted_value
                 
                 # Save the original value before anonymizing
                 original_info[tag] = value
                 
-                # Replace with encrypted value
+                # Replace with the encrypted value
                 setattr(dataset, tag, encrypted_value)
         
         # Save updated map to disk
@@ -179,7 +215,14 @@ def restore_file(encrypted_file: str, original_file: str, key_file: str, map_fil
         map_file = Path(map_file)
     
     with open(map_file, 'r') as f:
-        patient_map = json.load(f)
+        data = json.load(f)
+        
+        # Check if it's the new format
+        if isinstance(data, dict) and 'patient_info' in data:
+            patient_map = data['patient_info']
+        else:
+            # Old format
+            patient_map = data
     
     dataset = dcmread(encrypted_file)
     
