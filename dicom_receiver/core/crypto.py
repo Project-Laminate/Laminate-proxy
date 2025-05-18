@@ -37,11 +37,9 @@ class DicomEncryptor:
         self.encryption_key = self._load_or_create_key()
         self.fernet = Fernet(self.encryption_key)
         
-        # Map to store original patient info for later retrieval
         self.patient_info_map_file = self.storage_dir / PATIENT_INFO_MAP_FILENAME
         self.patient_info_map = self._load_patient_info_map()
         
-        # Store encrypted values to ensure consistency
         self.encrypted_values_map = {}
         self._extract_encrypted_values()
         
@@ -73,12 +71,14 @@ class DicomEncryptor:
                 with open(self.patient_info_map_file, 'r') as f:
                     data = json.load(f)
                     
-                    # Check if it's the new format (dictionary with patient_info and encrypted_values)
                     if isinstance(data, dict) and 'patient_info' in data:
                         self.encrypted_values_map = data.get('encrypted_values', {})
+                        
+                        if 'patient_study_map' in data:
+                            pass
+                            
                         return data['patient_info']
                     else:
-                        # It's the old format (just patient info)
                         return data
             except json.JSONDecodeError:
                 logger.error(f"Error loading patient info map, creating new one")
@@ -92,8 +92,18 @@ class DicomEncryptor:
             with open(self.patient_info_map_file, 'w') as f:
                 combined_map = {
                     'patient_info': self.patient_info_map,
-                    'encrypted_values': self.encrypted_values_map
+                    'encrypted_values': self.encrypted_values_map,
+                    'patient_study_map': {}
                 }
+                
+                for study_uid, tags in self.patient_info_map.items():
+                    if 'PatientID' in tags:
+                        patient_id = tags['PatientID']
+                        if patient_id not in combined_map['patient_study_map']:
+                            combined_map['patient_study_map'][patient_id] = []
+                        if study_uid not in combined_map['patient_study_map'][patient_id]:
+                            combined_map['patient_study_map'][patient_id].append(study_uid)
+                
                 json.dump(combined_map, f, indent=2)
     
     def encrypt_dataset(self, dataset: Dataset) -> Dict:

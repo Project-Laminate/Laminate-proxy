@@ -10,6 +10,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Dict, Set
+import shutil
 
 logger = logging.getLogger('dicom_receiver.storage')
 
@@ -84,6 +85,7 @@ class StudyMonitor:
 class DicomStorage:
     """
     Handles storage of DICOM files in an organized directory structure
+    using a patient/study/series/scans hierarchy
     """
     
     def __init__(self, storage_dir: str):
@@ -98,8 +100,10 @@ class DicomStorage:
         self.storage_dir = Path(storage_dir)
         
         self.storage_dir.mkdir(parents=True, exist_ok=True)
+        # Maps to track patient ID to study UIDs
+        self.patient_study_map = {}
     
-    def get_file_path(self, study_uid: str, series_uid: str, instance_uid: str) -> Path:
+    def get_file_path(self, study_uid: str, series_uid: str, instance_uid: str, dataset=None) -> Path:
         """
         Get the path where a DICOM file should be stored
         
@@ -111,22 +115,118 @@ class DicomStorage:
             SeriesInstanceUID of the DICOM dataset
         instance_uid : str
             SOPInstanceUID of the DICOM dataset
+        dataset : Dataset, optional
+            The DICOM dataset (if provided, used to get PatientID)
             
         Returns:
         --------
         Path: The path where the file should be stored
         """
-        study_dir = self.storage_dir / study_uid
+        # Determine patient ID (defaults to "unknown" if not available)
+        patient_id = "unknown"
+        
+        if dataset and hasattr(dataset, 'PatientID'):
+            patient_id = str(dataset.PatientID)
+            # Sanitize patient ID for safe directory names
+            patient_id = "".join(c for c in patient_id if c.isalnum() or c in "._- ").strip()
+            if not patient_id:
+                patient_id = "unknown"
+            
+            # Update mapping between patient and study
+            if patient_id not in self.patient_study_map:
+                self.patient_study_map[patient_id] = set()
+            self.patient_study_map[patient_id].add(study_uid)
+        
+        # Create directory structure: patient/study/series/scans
+        patient_dir = self.storage_dir / patient_id
+        study_dir = patient_dir / study_uid
         series_dir = study_dir / series_uid
-        series_dir.mkdir(parents=True, exist_ok=True)
+        scans_dir = series_dir / "scans"
+        scans_dir.mkdir(parents=True, exist_ok=True)
         
         filename = f"{instance_uid}.dcm"
-        return series_dir / filename
+        return scans_dir / filename
     
-    def get_study_path(self, study_uid: str) -> Path:
+    def get_patient_path(self, patient_id: str) -> Path:
+        """Get the path to a patient directory"""
+        return self.storage_dir / patient_id
+    
+    def get_study_path(self, patient_id: str, study_uid: str) -> Path:
         """Get the path to a study directory"""
+        return self.storage_dir / patient_id / study_uid
+    
+    def get_series_path(self, patient_id: str, study_uid: str, series_uid: str) -> Path:
+        """Get the path to a series directory"""
+        return self.storage_dir / patient_id / study_uid / series_uid
+    
+    def get_scans_path(self, patient_id: str, study_uid: str, series_uid: str) -> Path:
+        """Get the path to the scans directory within a series"""
+        return self.storage_dir / patient_id / study_uid / series_uid / "scans"
+    
+    # Backward compatibility methods
+    def get_study_path_by_uid(self, study_uid: str) -> Path:
+        """Get the study path for backward compatibility"""
+        # Try to find the study by checking all patient directories
+        for patient_dir in self.storage_dir.iterdir():
+            if patient_dir.is_dir():
+                study_dir = patient_dir / study_uid
+                if study_dir.exists():
+                    return study_dir
+        
+        # Fallback to old path structure if not found
         return self.storage_dir / study_uid
     
-    def get_series_path(self, study_uid: str, series_uid: str) -> Path:
-        """Get the path to a series directory"""
-        return self.storage_dir / study_uid / series_uid 
+    def migrate_to_patient_structure(self, patient_study_map=None):
+        """
+        Migrate existing files from study/series/instance.dcm to patient/study/series/scans/instance.dcm
+        
+        Parameters:
+        -----------
+        patient_study_map : dict, optional
+            Map of PatientID to list of StudyInstanceUIDs for mapping studies to patients
+        """
+        # Get all top-level directories that might be studies
+        for dir_path in self.storage_dir.iterdir():
+            if not dir_path.is_dir():
+                continue
+                
+            study_uid = dir_path.name
+            
+            # Skip directories that are already patient IDs
+            if patient_study_map and study_uid not in sum(patient_study_map.values(), []):
+                continue
+                
+            # Determine patient ID for this study
+            patient_id = "unknown"
+            if patient_study_map:
+                for pid, studies in patient_study_map.items():
+                    if study_uid in studies:
+                        patient_id = pid
+                        break
+            
+            logger.info(f"Migrating study {study_uid} to patient {patient_id}")
+            
+            # Create the new directory structure
+            new_study_dir = self.storage_dir / patient_id / study_uid
+            new_study_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Move all series directories to the new location
+            for series_dir in dir_path.iterdir():
+                if not series_dir.is_dir():
+                    continue
+                    
+                series_uid = series_dir.name
+                new_series_dir = new_study_dir / series_uid
+                new_scans_dir = new_series_dir / "scans"
+                new_scans_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Move all DICOM files to the scans directory
+                for file_path in series_dir.glob("*.dcm"):
+                    new_file_path = new_scans_dir / file_path.name
+                    shutil.move(str(file_path), str(new_file_path))
+                    
+            # After moving all files, remove the old directory if it's empty
+            if not any(dir_path.iterdir()):
+                shutil.rmtree(str(dir_path))
+                
+        logger.info("Migration to patient/study/series/scans structure complete") 

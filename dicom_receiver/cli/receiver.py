@@ -7,6 +7,7 @@ This is the main entry point for starting the DICOM receiver service.
 
 import argparse
 import logging
+import json
 from pathlib import Path
 
 from dicom_receiver.config import (
@@ -27,6 +28,7 @@ from dicom_receiver.config import (
     DEFAULT_CLEANUP_AFTER_UPLOAD,
     DEFAULT_MAX_RETRIES,
     DEFAULT_RETRY_DELAY,
+    PATIENT_INFO_MAP_FILENAME,
     print_config,
     ensure_dirs_exist
 )
@@ -80,6 +82,9 @@ def main():
     
     parser.add_argument('--show-config', action='store_true',
                         help='Print the current configuration and exit')
+                        
+    parser.add_argument('--migrate', action='store_true',
+                       help='Migrate existing storage to patient/study/series/scans structure')
     
     args = parser.parse_args()
     
@@ -109,8 +114,33 @@ def main():
         logger.info(f"Upload retry mechanism: max_retries={args.max_retries}, retry_delay={args.retry_delay}s")
     
     storage = DicomStorage(args.storage)
-    study_monitor = StudyMonitor(args.timeout)
     encryptor = DicomEncryptor(Path(args.storage), args.key_file)
+    
+    # Handle migration if requested
+    if args.migrate:
+        logger.info("Starting migration to patient/study/series/scans structure...")
+        
+        # Try to load the patient_study_map from the encryption mapping file
+        patient_study_map = None
+        map_file_path = Path(args.storage) / PATIENT_INFO_MAP_FILENAME
+        
+        if map_file_path.exists():
+            try:
+                with open(map_file_path, 'r') as f:
+                    data = json.load(f)
+                    if isinstance(data, dict) and 'patient_study_map' in data:
+                        patient_study_map = data['patient_study_map']
+                        logger.info(f"Loaded patient-study mapping for {len(patient_study_map)} patients")
+            except Exception as e:
+                logger.error(f"Error loading patient-study map: {e}")
+        
+        # Perform the migration
+        storage.migrate_to_patient_structure(patient_study_map)
+        logger.info("Migration complete. Exiting.")
+        return
+    
+    # Continue with normal operation
+    study_monitor = StudyMonitor(args.timeout)
     
     dicom_scp = DicomServiceProvider(
         storage=storage,

@@ -127,10 +127,13 @@ class DicomServiceProvider:
         
         self.study_monitor.update_study_activity(study_uid)
         
-        file_path = self.storage.get_file_path(study_uid, series_uid, instance_uid)
+        # Pass the dataset to get_file_path to determine the patient ID
+        file_path = self.storage.get_file_path(study_uid, series_uid, instance_uid, dataset=dataset)
         
+        # Encrypt patient information
         self.encryptor.encrypt_dataset(dataset)
         
+        # Save the file
         dataset.save_as(file_path)
         
         logger.info(f"Stored DICOM file: {file_path}")
@@ -151,7 +154,8 @@ class DicomServiceProvider:
         
         logger.info(f"Processing completed study: {study_uid}")
         
-        study_dir = self.storage.get_study_path(study_uid)
+        # Get the study directory using the backward compatibility method
+        study_dir = self.storage.get_study_path_by_uid(study_uid)
         
         if not study_dir.exists():
             logger.error(f"Study directory not found: {study_dir}")

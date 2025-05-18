@@ -1,8 +1,7 @@
-
 services:
   dicom-receiver:
     image: amrshadid/laminate-proxy:latest
-    platform: linux/amd64
+    platform: linux/arm64
     ports:
        - "${DICOM_RECEIVER_PORT:-11112}:11112"
     volumes:
