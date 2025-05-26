@@ -229,4 +229,280 @@ class DicomStorage:
             if not any(dir_path.iterdir()):
                 shutil.rmtree(str(dir_path))
                 
-        logger.info("Migration to patient/study/series/scans structure complete") 
+        logger.info("Migration to patient/study/series/scans structure complete")
+    
+    def get_all_patients(self):
+        """
+        Get information about all patients in storage
+        
+        Returns:
+        --------
+        List[Dict]: List of patient information dictionaries
+        """
+        patients = []
+        
+        for patient_dir in self.storage_dir.iterdir():
+            if not patient_dir.is_dir():
+                continue
+                
+            patient_id = patient_dir.name
+            
+            # Get patient info from the first DICOM file we can find
+            patient_info = {'PatientID': patient_id}
+            
+            # Look for any DICOM file to extract patient information
+            for study_dir in patient_dir.iterdir():
+                if not study_dir.is_dir():
+                    continue
+                    
+                for series_dir in study_dir.iterdir():
+                    if not series_dir.is_dir():
+                        continue
+                        
+                    scans_dir = series_dir / "scans"
+                    if scans_dir.exists():
+                        for dcm_file in scans_dir.glob("*.dcm"):
+                            try:
+                                from pydicom import dcmread
+                                ds = dcmread(dcm_file)
+                                
+                                if hasattr(ds, 'PatientName'):
+                                    patient_info['PatientName'] = str(ds.PatientName)
+                                if hasattr(ds, 'PatientBirthDate'):
+                                    patient_info['PatientBirthDate'] = str(ds.PatientBirthDate)
+                                if hasattr(ds, 'PatientSex'):
+                                    patient_info['PatientSex'] = str(ds.PatientSex)
+                                
+                                patients.append(patient_info)
+                                return patients  # Found one patient, return
+                            except Exception as e:
+                                logger.warning(f"Error reading DICOM file {dcm_file}: {e}")
+                                continue
+        
+        return patients
+    
+    def get_all_studies(self):
+        """
+        Get information about all studies in storage
+        
+        Returns:
+        --------
+        List[Dict]: List of study information dictionaries
+        """
+        studies = []
+        
+        for patient_dir in self.storage_dir.iterdir():
+            if not patient_dir.is_dir():
+                continue
+                
+            patient_id = patient_dir.name
+            
+            for study_dir in patient_dir.iterdir():
+                if not study_dir.is_dir():
+                    continue
+                    
+                study_uid = study_dir.name
+                study_info = {
+                    'PatientID': patient_id,
+                    'StudyInstanceUID': study_uid
+                }
+                
+                # Count series and instances
+                series_count = 0
+                instance_count = 0
+                
+                # Get study info from the first DICOM file we can find
+                for series_dir in study_dir.iterdir():
+                    if not series_dir.is_dir():
+                        continue
+                        
+                    series_count += 1
+                    scans_dir = series_dir / "scans"
+                    if scans_dir.exists():
+                        dcm_files = list(scans_dir.glob("*.dcm"))
+                        instance_count += len(dcm_files)
+                        
+                        # Extract study information from first DICOM file
+                        if dcm_files and 'StudyDescription' not in study_info:
+                            try:
+                                from pydicom import dcmread
+                                ds = dcmread(dcm_files[0])
+                                
+                                if hasattr(ds, 'PatientName'):
+                                    study_info['PatientName'] = str(ds.PatientName)
+                                if hasattr(ds, 'PatientBirthDate'):
+                                    study_info['PatientBirthDate'] = str(ds.PatientBirthDate)
+                                if hasattr(ds, 'PatientSex'):
+                                    study_info['PatientSex'] = str(ds.PatientSex)
+                                if hasattr(ds, 'StudyDescription'):
+                                    study_info['StudyDescription'] = str(ds.StudyDescription)
+                                if hasattr(ds, 'StudyDate'):
+                                    study_info['StudyDate'] = str(ds.StudyDate)
+                                if hasattr(ds, 'StudyTime'):
+                                    study_info['StudyTime'] = str(ds.StudyTime)
+                                if hasattr(ds, 'StudyID'):
+                                    study_info['StudyID'] = str(ds.StudyID)
+                                if hasattr(ds, 'AccessionNumber'):
+                                    study_info['AccessionNumber'] = str(ds.AccessionNumber)
+                                    
+                            except Exception as e:
+                                logger.warning(f"Error reading DICOM file {dcm_files[0]}: {e}")
+                
+                study_info['NumberOfStudyRelatedSeries'] = series_count
+                study_info['NumberOfStudyRelatedInstances'] = instance_count
+                studies.append(study_info)
+        
+        return studies
+    
+    def get_series_for_study(self, study_uid: str):
+        """
+        Get information about all series for a specific study
+        
+        Parameters:
+        -----------
+        study_uid : str
+            StudyInstanceUID
+            
+        Returns:
+        --------
+        List[Dict]: List of series information dictionaries
+        """
+        series_list = []
+        
+        # Find the study directory
+        study_dir = self.get_study_path_by_uid(study_uid)
+        if not study_dir.exists():
+            return series_list
+        
+        for series_dir in study_dir.iterdir():
+            if not series_dir.is_dir():
+                continue
+                
+            series_uid = series_dir.name
+            series_info = {
+                'StudyInstanceUID': study_uid,
+                'SeriesInstanceUID': series_uid
+            }
+            
+            scans_dir = series_dir / "scans"
+            if scans_dir.exists():
+                dcm_files = list(scans_dir.glob("*.dcm"))
+                series_info['NumberOfSeriesRelatedInstances'] = len(dcm_files)
+                
+                # Extract series information from first DICOM file
+                if dcm_files:
+                    try:
+                        from pydicom import dcmread
+                        ds = dcmread(dcm_files[0])
+                        
+                        if hasattr(ds, 'PatientName'):
+                            series_info['PatientName'] = str(ds.PatientName)
+                        if hasattr(ds, 'PatientID'):
+                            series_info['PatientID'] = str(ds.PatientID)
+                        if hasattr(ds, 'SeriesDescription'):
+                            series_info['SeriesDescription'] = str(ds.SeriesDescription)
+                        if hasattr(ds, 'SeriesNumber'):
+                            series_info['SeriesNumber'] = str(ds.SeriesNumber)
+                        if hasattr(ds, 'Modality'):
+                            series_info['Modality'] = str(ds.Modality)
+                        if hasattr(ds, 'SeriesDate'):
+                            series_info['SeriesDate'] = str(ds.SeriesDate)
+                        if hasattr(ds, 'SeriesTime'):
+                            series_info['SeriesTime'] = str(ds.SeriesTime)
+                            
+                    except Exception as e:
+                        logger.warning(f"Error reading DICOM file {dcm_files[0]}: {e}")
+            
+            series_list.append(series_info)
+        
+        return series_list
+    
+    def get_images_for_series(self, study_uid: str, series_uid: str):
+        """
+        Get information about all images for a specific series
+        
+        Parameters:
+        -----------
+        study_uid : str
+            StudyInstanceUID
+        series_uid : str
+            SeriesInstanceUID
+            
+        Returns:
+        --------
+        List[Dict]: List of image information dictionaries
+        """
+        images = []
+        
+        # Find the series directory
+        study_dir = self.get_study_path_by_uid(study_uid)
+        if not study_dir.exists():
+            return images
+        
+        series_dir = study_dir / series_uid
+        if not series_dir.exists():
+            return images
+        
+        scans_dir = series_dir / "scans"
+        if not scans_dir.exists():
+            return images
+        
+        for dcm_file in scans_dir.glob("*.dcm"):
+            try:
+                from pydicom import dcmread
+                ds = dcmread(dcm_file)
+                
+                image_info = {
+                    'StudyInstanceUID': study_uid,
+                    'SeriesInstanceUID': series_uid,
+                    'SOPInstanceUID': str(ds.SOPInstanceUID),
+                    'SOPClassUID': str(ds.SOPClassUID)
+                }
+                
+                if hasattr(ds, 'PatientName'):
+                    image_info['PatientName'] = str(ds.PatientName)
+                if hasattr(ds, 'PatientID'):
+                    image_info['PatientID'] = str(ds.PatientID)
+                if hasattr(ds, 'InstanceNumber'):
+                    image_info['InstanceNumber'] = str(ds.InstanceNumber)
+                
+                images.append(image_info)
+                
+            except Exception as e:
+                logger.warning(f"Error reading DICOM file {dcm_file}: {e}")
+                continue
+        
+        return images
+    
+    def get_images_for_study(self, study_uid: str):
+        """
+        Get file paths for all images in a specific study
+        
+        Parameters:
+        -----------
+        study_uid : str
+            StudyInstanceUID
+            
+        Returns:
+        --------
+        List[str]: List of file paths to DICOM files in the study
+        """
+        image_files = []
+        
+        # Find the study directory
+        study_dir = self.get_study_path_by_uid(study_uid)
+        if not study_dir.exists():
+            return image_files
+        
+        # Iterate through all series in the study
+        for series_dir in study_dir.iterdir():
+            if not series_dir.is_dir():
+                continue
+            
+            scans_dir = series_dir / "scans"
+            if scans_dir.exists():
+                # Add all DICOM files in this series
+                for dcm_file in scans_dir.glob("*.dcm"):
+                    image_files.append(str(dcm_file))
+        
+        return image_files

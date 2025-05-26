@@ -42,6 +42,7 @@ setup(
             'dicom-restore=dicom_receiver.cli.restore:main',
             'dicom-config=dicom_receiver.config:print_config',
             'dicom-upload=scripts.upload_study:main',
+            'dicom-query=dicom_receiver.cli.query:main',
         ],
     },
     install_requires=[
