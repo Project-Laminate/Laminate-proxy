@@ -1,12 +1,12 @@
 # DICOM Receiver
 
-A secure DICOM receiver service for hospital use that receives DICOM images, organizes them by study/series, encrypts patient information, and uploads completed studies to a remote API.
+A secure DICOM receiver service for hospital use that receives DICOM images, organizes them by study/series, anonymizes patient information, and uploads completed studies to a remote API.
 
 ## Features
 
 - Receives DICOM images from PACS and modalities
 - Organizes files by study and series in a structured storage
-- Encrypts patient information for privacy compliance
+- Anonymizes patient information for privacy compliance (replaces PII with "ANON" and uses sequential patient naming like "sub-001")
 - Provides tools to restore original patient information when needed
 - Automatic study completion detection with configurable timeout
 - Zips completed studies automatically
@@ -37,7 +37,7 @@ The application supports a flexible configuration system with three levels of pr
 - `DICOM_RECEIVER_AE_TITLE` - AE Title for the DICOM SCP (default: DICOMRCV)
 - `DICOM_RECEIVER_STORAGE_DIR` - Directory to store received DICOM files (default: storage)
 - `DICOM_RECEIVER_TIMEOUT` - Timeout in seconds for study completion detection (default: 60)
-- `DICOM_RECEIVER_KEY_FILE` - File to store the encryption key (default: encryption_key.key)
+
 - `DICOM_RECEIVER_LOG_LEVEL` - Logging level (default: INFO)
 - `DICOM_RECEIVER_LOG_FILE` - Log file path (default: None, logs to console)
 
@@ -76,7 +76,7 @@ dicom-receiver --max-connections 20 --max-retries 5 --retry-delay 10 --cleanup-a
 
 ```bash
 # Restore patient information in a DICOM file
-dicom-restore encrypted_file.dcm restored_file.dcm --key-file encryption_key.key
+dicom-restore anonymized_file.dcm restored_file.dcm --map-file patient_info_map.json
 ```
 
 ### Manually Uploading a Study
@@ -171,7 +171,7 @@ The application can be run in a Docker container for easy deployment. See the Do
 
 - **Core Components**
   - `storage.py` - Handles file storage and study completion detection
-  - `crypto.py` - Handles encryption/decryption of patient information
+  - `crypto.py` - Handles anonymization/restoration of patient information
   - `scp.py` - DICOM Service Class Provider implementation
   - `uploader.py` - API authentication and study upload functionality
 

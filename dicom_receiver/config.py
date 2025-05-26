@@ -26,7 +26,6 @@ DEFAULT_PORT = int(get_env_or_default('DICOM_RECEIVER_PORT', 11112))
 DEFAULT_AE_TITLE = get_env_or_default('DICOM_RECEIVER_AE_TITLE', 'DICOMRCV').encode()
 DEFAULT_STORAGE_DIR = get_env_or_default('DICOM_RECEIVER_STORAGE_DIR', get_data_path('storage'))
 DEFAULT_TIMEOUT = int(get_env_or_default('DICOM_RECEIVER_TIMEOUT', 60))  # seconds
-DEFAULT_KEY_FILE = get_env_or_default('DICOM_RECEIVER_KEY_FILE', get_data_path('keys/encryption_key.key'))
 DEFAULT_LOG_LEVEL = get_env_or_default('DICOM_RECEIVER_LOG_LEVEL', 'INFO')
 DEFAULT_LOG_FILE = get_env_or_default('DICOM_RECEIVER_LOG_FILE', get_data_path('logs/dicom_receiver.log'))
 
@@ -69,7 +68,7 @@ def get_config_dict():
         'ae_title': DEFAULT_AE_TITLE,
         'storage_dir': DEFAULT_STORAGE_DIR,
         'timeout': DEFAULT_TIMEOUT,
-        'key_file': DEFAULT_KEY_FILE,
+
         'log_level': DEFAULT_LOG_LEVEL,
         'log_file': DEFAULT_LOG_FILE,
         'pii_tags': PII_TAGS,
@@ -103,6 +102,6 @@ def ensure_dirs_exist():
     Path(DEFAULT_DATA_DIR).mkdir(exist_ok=True)
     Path(DEFAULT_STORAGE_DIR).mkdir(parents=True, exist_ok=True)
     Path(DEFAULT_ZIP_DIR).mkdir(parents=True, exist_ok=True)
-    Path(os.path.dirname(DEFAULT_KEY_FILE)).mkdir(parents=True, exist_ok=True)
+
     if DEFAULT_LOG_FILE:
         Path(os.path.dirname(DEFAULT_LOG_FILE)).mkdir(parents=True, exist_ok=True)

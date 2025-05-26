@@ -16,7 +16,6 @@ from dicom_receiver.config import (
     DEFAULT_AE_TITLE,
     DEFAULT_STORAGE_DIR,
     DEFAULT_TIMEOUT,
-    DEFAULT_KEY_FILE,
     DEFAULT_LOG_LEVEL,
     DEFAULT_LOG_FILE,
     DEFAULT_API_URL,
@@ -33,7 +32,7 @@ from dicom_receiver.config import (
     ensure_dirs_exist
 )
 from dicom_receiver.utils.logging_config import configure_logging
-from dicom_receiver.core.crypto import DicomEncryptor
+from dicom_receiver.core.crypto import DicomAnonymizer
 from dicom_receiver.core.storage import DicomStorage, StudyMonitor
 from dicom_receiver.core.scp import DicomServiceProvider
 
@@ -52,8 +51,7 @@ def main():
                         help=f'AE Title for this SCP (default/env: {DEFAULT_AE_TITLE.decode()})')
     parser.add_argument('--timeout', type=int, default=DEFAULT_TIMEOUT,
                         help=f'Timeout in seconds after receiving the last file in a study (default/env: {DEFAULT_TIMEOUT})')
-    parser.add_argument('--key-file', type=str, default=DEFAULT_KEY_FILE,
-                        help=f'File to store the encryption key (default/env: {DEFAULT_KEY_FILE})')
+
     parser.add_argument('--log-level', type=str, default=DEFAULT_LOG_LEVEL,
                         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                         help=f'Logging level (default/env: {DEFAULT_LOG_LEVEL})')
@@ -102,7 +100,7 @@ def main():
     logger.info(f"Storage directory: {args.storage}")
     logger.info(f"AE Title: {args.ae_title}")
     logger.info(f"Timeout: {args.timeout}")
-    logger.info(f"Key file: {args.key_file}")
+
     if args.log_file:
         logger.info(f"Log file: {args.log_file}")
     
@@ -114,7 +112,7 @@ def main():
         logger.info(f"Upload retry mechanism: max_retries={args.max_retries}, retry_delay={args.retry_delay}s")
     
     storage = DicomStorage(args.storage)
-    encryptor = DicomEncryptor(Path(args.storage), args.key_file)
+    anonymizer = DicomAnonymizer(Path(args.storage))
     
     # Handle migration if requested
     if args.migrate:
@@ -145,7 +143,7 @@ def main():
     dicom_scp = DicomServiceProvider(
         storage=storage,
         study_monitor=study_monitor,
-        encryptor=encryptor,
+        encryptor=anonymizer,
         port=args.port,
         ae_title=args.ae_title.encode(),
         api_url=args.api_url,

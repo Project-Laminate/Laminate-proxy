@@ -7,14 +7,12 @@ services:
     volumes:
       - ./mounts/storage:/data/storage
       - ./mounts/zips:/data/zips
-      - ./mounts/keys:/data/keys
       - ./mounts/logs:/data/logs
     environment:
       - DICOM_RECEIVER_PORT=${DICOM_RECEIVER_PORT}
       - DICOM_RECEIVER_AE_TITLE=${DICOM_RECEIVER_AE_TITLE}
       - DICOM_RECEIVER_STORAGE_DIR=${DICOM_RECEIVER_STORAGE_DIR}
       - DICOM_RECEIVER_TIMEOUT=${DICOM_RECEIVER_TIMEOUT}
-      - DICOM_RECEIVER_KEY_FILE=${DICOM_RECEIVER_KEY_FILE}
       - DICOM_RECEIVER_LOG_LEVEL=${DICOM_RECEIVER_LOG_LEVEL}
       - DICOM_RECEIVER_LOG_FILE=${DICOM_RECEIVER_LOG_FILE}
       - DICOM_RECEIVER_API_URL=${DICOM_RECEIVER_API_URL}

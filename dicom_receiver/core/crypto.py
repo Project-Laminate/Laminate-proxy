@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """
-Encryption/decryption utilities for DICOM patient information
+Anonymization utilities for DICOM patient information
 
-This module handles cryptographic operations for protecting patient data
+This module handles anonymization operations for protecting patient data
 """
 
 import json
@@ -11,58 +11,38 @@ from pathlib import Path
 from typing import Dict, Optional
 import threading
 
-from cryptography.fernet import Fernet
 from pydicom import Dataset
 
 from dicom_receiver.config import PII_TAGS, PATIENT_INFO_MAP_FILENAME
 
 logger = logging.getLogger('dicom_receiver.crypto')
 
-class DicomEncryptor:
-    """Handles encryption and decryption of DICOM patient information"""
+class DicomAnonymizer:
+    """Handles anonymization and restoration of DICOM patient information"""
     
-    def __init__(self, storage_dir: Path, key_file: str):
+    def __init__(self, storage_dir: Path, map_file: Optional[str] = None):
         """
-        Initialize the encryptor
+        Initialize the anonymizer
         
         Parameters:
         -----------
         storage_dir : Path
             Base directory for storing the patient info map
-        key_file : str
-            File to store/load the encryption key
+        map_file : str, optional
+            Custom path for the patient info map file
         """
         self.storage_dir = storage_dir
-        self.key_file = key_file
-        self.encryption_key = self._load_or_create_key()
-        self.fernet = Fernet(self.encryption_key)
         
-        self.patient_info_map_file = self.storage_dir / PATIENT_INFO_MAP_FILENAME
+        if map_file:
+            self.patient_info_map_file = Path(map_file)
+        else:
+            self.patient_info_map_file = self.storage_dir / PATIENT_INFO_MAP_FILENAME
+        
+        self.patient_name_map = {}  # Maps original patient names to anonymized names
         self.patient_info_map = self._load_patient_info_map()
-        
-        self.encrypted_values_map = {}
-        self._extract_encrypted_values()
+        self.patient_counter = self._get_next_patient_counter()
         
         self.patient_map_lock = threading.Lock()
-    
-    def _extract_encrypted_values(self):
-        """Extract encrypted values from the patient info map for consistency"""
-        for study_uid, tags in self.patient_info_map.items():
-            if study_uid not in self.encrypted_values_map:
-                self.encrypted_values_map[study_uid] = {}
-                
-    def _load_or_create_key(self) -> bytes:
-        """Load existing encryption key or create a new one"""
-        key_path = Path(self.key_file)
-        if key_path.exists():
-            with open(key_path, 'rb') as key_file:
-                return key_file.read()
-        else:
-            key = Fernet.generate_key()
-            with open(key_path, 'wb') as key_file:
-                key_file.write(key)
-            logger.info(f"Created new encryption key at {key_path}")
-            return key
     
     def _load_patient_info_map(self) -> Dict:
         """Load the patient information mapping from disk"""
@@ -72,30 +52,58 @@ class DicomEncryptor:
                     data = json.load(f)
                     
                     if isinstance(data, dict) and 'patient_info' in data:
-                        self.encrypted_values_map = data.get('encrypted_values', {})
+                        # Load patient name mapping if it exists
+                        if 'patient_name_map' in data:
+                            self.patient_name_map = data['patient_name_map']
                         
-                        if 'patient_study_map' in data:
-                            pass
-                            
                         return data['patient_info']
                     else:
+                        # Old format - migrate to new format
                         return data
             except json.JSONDecodeError:
                 logger.error(f"Error loading patient info map, creating new one")
                 return {}
         return {}
     
+    def _get_next_patient_counter(self) -> int:
+        """Get the next patient counter based on existing anonymized names"""
+        max_counter = 0
+        for anon_name in self.patient_name_map.values():
+            if anon_name.startswith('sub-'):
+                try:
+                    counter = int(anon_name.split('-')[1])
+                    max_counter = max(max_counter, counter)
+                except (IndexError, ValueError):
+                    continue
+        return max_counter + 1
+    
+    def _get_anonymized_patient_name(self, original_name: str) -> str:
+        """Get or create an anonymized patient name"""
+        if original_name in self.patient_name_map:
+            return self.patient_name_map[original_name]
+        
+        # Create new anonymized name
+        anon_name = f"sub-{self.patient_counter:03d}"
+        self.patient_name_map[original_name] = anon_name
+        self.patient_counter += 1
+        
+        logger.info(f"Created new anonymized patient name: {original_name} -> {anon_name}")
+        return anon_name
+    
     def _save_patient_info_map(self):
         """Save the patient information mapping to disk"""
         with self.patient_map_lock:
-            # Save both the original info and encrypted values
+            # Create the directory if it doesn't exist
+            self.patient_info_map_file.parent.mkdir(parents=True, exist_ok=True)
+            
             with open(self.patient_info_map_file, 'w') as f:
                 combined_map = {
                     'patient_info': self.patient_info_map,
-                    'encrypted_values': self.encrypted_values_map,
+                    'patient_name_map': self.patient_name_map,
                     'patient_study_map': {}
                 }
                 
+                # Build patient study map
                 for study_uid, tags in self.patient_info_map.items():
                     if 'PatientID' in tags:
                         patient_id = tags['PatientID']
@@ -106,32 +114,29 @@ class DicomEncryptor:
                 
                 json.dump(combined_map, f, indent=2)
     
-    def encrypt_dataset(self, dataset: Dataset) -> Dict:
+    def anonymize_dataset(self, dataset: Dataset) -> Dict:
         """
-        Encrypt patient identifiable information in a DICOM dataset
+        Anonymize patient identifiable information in a DICOM dataset
         
         Parameters:
         -----------
         dataset : Dataset
-            The DICOM dataset to encrypt
+            The DICOM dataset to anonymize
             
         Returns:
         --------
-        Dict: Dictionary containing the original values that were encrypted
+        Dict: Dictionary containing the original values that were anonymized
         """
         original_info = {}
         
         # Get study UID for mapping
         study_uid = dataset.StudyInstanceUID
         
-        # Initialize maps if needed
+        # Initialize map if needed
         if study_uid not in self.patient_info_map:
             self.patient_info_map[study_uid] = {}
         
-        if study_uid not in self.encrypted_values_map:
-            self.encrypted_values_map[study_uid] = {}
-        
-        # Encrypt PII fields that exist in the dataset
+        # Process PII fields that exist in the dataset
         for tag in PII_TAGS:
             if hasattr(dataset, tag) and getattr(dataset, tag):
                 value = str(getattr(dataset, tag))
@@ -140,34 +145,60 @@ class DicomEncryptor:
                 if tag not in self.patient_info_map[study_uid]:
                     self.patient_info_map[study_uid][tag] = value
                 
-                # Check if we've already encrypted this value
-                if tag in self.encrypted_values_map[study_uid]:
-                    # Reuse the existing encrypted value for consistency
-                    encrypted_value = self.encrypted_values_map[study_uid][tag]
-                else:
-                    # New value to encrypt - generate and store it
-                    encrypted_value = self.fernet.encrypt(value.encode()).decode()
-                    self.encrypted_values_map[study_uid][tag] = encrypted_value
-                
-                # Save the original value before anonymizing
+                # Save the original value
                 original_info[tag] = value
                 
-                # Replace with the encrypted value
-                setattr(dataset, tag, encrypted_value)
+                # Apply anonymization based on field type
+                if tag == 'PatientName':
+                    # Use sequential naming for patient names
+                    anonymized_value = self._get_anonymized_patient_name(value)
+                elif tag == 'PatientID':
+                    # Use the same anonymized name as PatientID for consistency
+                    if 'PatientName' in original_info:
+                        anonymized_value = self._get_anonymized_patient_name(original_info['PatientName'])
+                    elif hasattr(dataset, 'PatientName') and dataset.PatientName:
+                        anonymized_value = self._get_anonymized_patient_name(str(dataset.PatientName))
+                    else:
+                        anonymized_value = self._get_anonymized_patient_name(value)
+                else:
+                    # For all other PII fields, use "ANON"
+                    anonymized_value = "ANON"
+                
+                # Replace with the anonymized value
+                setattr(dataset, tag, anonymized_value)
         
         # Save updated map to disk
         self._save_patient_info_map()
         
         return original_info
     
-    def decrypt_dataset(self, dataset: Dataset) -> bool:
+    def get_anonymized_patient_name(self, study_uid: str) -> Optional[str]:
+        """
+        Get the anonymized patient name for a study
+        
+        Parameters:
+        -----------
+        study_uid : str
+            Study UID
+            
+        Returns:
+        --------
+        str: Anonymized patient name (e.g., "sub-001") or None if not found
+        """
+        if study_uid in self.patient_info_map:
+            original_name = self.patient_info_map[study_uid].get('PatientName')
+            if original_name and original_name in self.patient_name_map:
+                return self.patient_name_map[original_name]
+        return None
+    
+    def restore_dataset(self, dataset: Dataset) -> bool:
         """
         Restore original patient information to a dataset
         
         Parameters:
         -----------
         dataset : Dataset
-            The DICOM dataset with encrypted values
+            The DICOM dataset with anonymized values
             
         Returns:
         --------
@@ -187,19 +218,30 @@ class DicomEncryptor:
         
         return True
 
+    # Backward compatibility methods
+    def encrypt_dataset(self, dataset: Dataset) -> Dict:
+        """Backward compatibility method - calls anonymize_dataset"""
+        return self.anonymize_dataset(dataset)
+    
+    def decrypt_dataset(self, dataset: Dataset) -> bool:
+        """Backward compatibility method - calls restore_dataset"""
+        return self.restore_dataset(dataset)
 
-def restore_file(encrypted_file: str, original_file: str, key_file: str, map_file: Optional[str] = None):
+
+# Backward compatibility alias
+DicomEncryptor = DicomAnonymizer
+
+
+def restore_file(anonymized_file: str, original_file: str, map_file: Optional[str] = None):
     """
     Restore original patient information to a DICOM file
     
     Parameters:
     -----------
-    encrypted_file : str
-        Path to the encrypted DICOM file
+    anonymized_file : str
+        Path to the anonymized DICOM file
     original_file : str
         Path to save the restored DICOM file
-    key_file : str
-        Path to the encryption key file
     map_file : str, optional
         Path to the patient info map file
     
@@ -209,13 +251,8 @@ def restore_file(encrypted_file: str, original_file: str, key_file: str, map_fil
     """
     from pydicom import dcmread
     
-    with open(key_file, 'rb') as f:
-        key = f.read()
-    
-    fernet = Fernet(key)
-    
     if map_file is None:
-        file_path = Path(encrypted_file)
+        file_path = Path(anonymized_file)
         if len(file_path.parts) >= 3:
             storage_dir = file_path.parent.parent.parent
             map_file = storage_dir / PATIENT_INFO_MAP_FILENAME
@@ -234,7 +271,7 @@ def restore_file(encrypted_file: str, original_file: str, key_file: str, map_fil
             # Old format
             patient_map = data
     
-    dataset = dcmread(encrypted_file)
+    dataset = dcmread(anonymized_file)
     
     study_uid = dataset.StudyInstanceUID
     

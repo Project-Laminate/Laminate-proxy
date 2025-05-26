@@ -47,7 +47,6 @@ setup(
     install_requires=[
         'pynetdicom>=2.1.0',
         'pydicom>=2.4.0',
-        'cryptography>=44.0.0',
         'requests>=2.30.0',
     ],
     classifiers=[

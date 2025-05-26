@@ -13,7 +13,7 @@ COPY . .
 RUN pip install -e .
 
 # Create necessary directories
-RUN mkdir -p /data/storage /data/zips /data/keys /data/logs
+RUN mkdir -p /data/storage /data/zips /data/logs
 
 # Expose the DICOM port
 EXPOSE 11112

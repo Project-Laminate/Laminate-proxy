@@ -2,7 +2,7 @@
 """
 Command-line interface for the DICOM patient information restoration
 
-This script restores the original patient information to encrypted DICOM files.
+This script restores the original patient information to anonymized DICOM files.
 """
 
 import argparse
@@ -12,7 +12,6 @@ from pathlib import Path
 from dicom_receiver.core.crypto import restore_file
 from dicom_receiver.utils.logging_config import configure_logging
 from dicom_receiver.config import (
-    DEFAULT_KEY_FILE,
     DEFAULT_LOG_LEVEL,
     DEFAULT_LOG_FILE,
     print_config
@@ -23,10 +22,8 @@ logger = logging.getLogger('restore_patient_info')
 def main():
     """Main entry point for the script"""
     parser = argparse.ArgumentParser(description='Restore patient information in DICOM files')
-    parser.add_argument('encrypted_file', type=str, help='Path to the encrypted DICOM file')
+    parser.add_argument('anonymized_file', type=str, help='Path to the anonymized DICOM file')
     parser.add_argument('original_file', type=str, help='Path to save the restored DICOM file')
-    parser.add_argument('--key-file', type=str, default=DEFAULT_KEY_FILE,
-                        help=f'Path to the encryption key file (default/env: {DEFAULT_KEY_FILE})')
     parser.add_argument('--map-file', type=str, help='Path to the patient info map file')
     parser.add_argument('--log-level', type=str, default=DEFAULT_LOG_LEVEL,
                         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
@@ -45,17 +42,15 @@ def main():
     log_level = getattr(logging, args.log_level)
     configure_logging(level=log_level, log_file=args.log_file)
     
-    logger.info(f"Encrypted file: {args.encrypted_file}")
+    logger.info(f"Anonymized file: {args.anonymized_file}")
     logger.info(f"Output file: {args.original_file}")
-    logger.info(f"Key file: {args.key_file}")
     if args.map_file:
         logger.info(f"Map file: {args.map_file}")
     
     try:
         success = restore_file(
-            args.encrypted_file,
+            args.anonymized_file,
             args.original_file,
-            args.key_file,
             args.map_file
         )
         

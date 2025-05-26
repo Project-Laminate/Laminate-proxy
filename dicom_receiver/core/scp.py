@@ -162,7 +162,14 @@ class DicomServiceProvider:
             return
         
         try:
-            zip_path = self.zip_dir / f"{study_uid}.zip"
+            # Get the anonymized patient name for this study
+            anonymized_name = self.encryptor.get_anonymized_patient_name(study_uid)
+            if not anonymized_name:
+                logger.warning(f"No anonymized patient name found for study {study_uid}, using study UID")
+                anonymized_name = study_uid
+            
+            # Use anonymized patient name for zip file
+            zip_path = self.zip_dir / f"{anonymized_name}.zip"
             
             zip_file = self.api_uploader.zip_study(study_dir, str(zip_path))
             
@@ -173,13 +180,13 @@ class DicomServiceProvider:
             success, response_data = self.api_uploader.upload_study(
                 zip_file,
                 study_info={
-                    'name': study_uid,
+                    'name': anonymized_name,
                 },
                 study_dir=str(study_dir) if self.cleanup_after_upload else None
             )
             
             if success:
-                logger.info(f"Successfully uploaded study: {study_uid}")
+                logger.info(f"Successfully uploaded study: {study_uid} as {anonymized_name}")
                 if response_data and 'id' in response_data:
                     logger.info(f"Dataset ID: {response_data.get('id')}")
                 if self.cleanup_after_upload:

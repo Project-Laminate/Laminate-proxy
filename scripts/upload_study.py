@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from dicom_receiver.core.uploader import ApiUploader
+from dicom_receiver.core.crypto import DicomAnonymizer
 from dicom_receiver.utils.logging_config import configure_logging
 from dicom_receiver.config import (
     DEFAULT_API_URL,
@@ -87,9 +88,28 @@ def main():
     
     logger.info(f"Configured with retry mechanism: max_retries={args.max_retries}, retry_delay={args.retry_delay}s")
     
-    # Zip the study
+    # Try to get anonymized patient name from the study
     study_name = study_path.name
-    zip_path = zip_dir / f"{study_name}.zip"
+    anonymized_name = study_name  # Default to study directory name
+    
+    # Try to find the anonymized patient name if this is a study UID directory
+    try:
+        # Look for patient info map in the parent directory (storage directory)
+        storage_dir = study_path.parent
+        anonymizer = DicomAnonymizer(storage_dir)
+        
+        # Try to get anonymized name for this study
+        potential_anonymized_name = anonymizer.get_anonymized_patient_name(study_name)
+        if potential_anonymized_name:
+            anonymized_name = potential_anonymized_name
+            logger.info(f"Found anonymized patient name: {anonymized_name} for study {study_name}")
+        else:
+            logger.info(f"No anonymized patient name found for study {study_name}, using directory name")
+    except Exception as e:
+        logger.warning(f"Could not load anonymization info: {e}, using directory name")
+    
+    # Zip the study using anonymized name
+    zip_path = zip_dir / f"{anonymized_name}.zip"
     
     logger.info(f"Zipping study: {study_path}")
     zip_file = uploader.zip_study(str(study_path), str(zip_path))
@@ -112,7 +132,7 @@ def main():
     success, response_data = uploader.upload_study(
         zip_file, 
         study_info={
-            'name': study_name,
+            'name': anonymized_name,
         },
         study_dir=str(study_path) if args.cleanup_after_upload else None
     )
