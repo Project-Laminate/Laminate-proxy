@@ -1,6 +1,6 @@
 services:
   dicom-receiver:
-    image: amrshadid/laminate-proxy:latest
+    image: as18701/laminate-proxy:latest
     platform: linux/arm64
     ports:
        - "${DICOM_RECEIVER_PORT:-11112}:11112"
