@@ -4,6 +4,7 @@ Logging configuration for the DICOM receiver
 """
 
 import logging
+import logging.handlers
 import sys
 from pathlib import Path
 
@@ -30,12 +31,18 @@ def configure_logging(level=logging.INFO, log_file=None):
     console_handler.setFormatter(console_formatter)
     root_logger.addHandler(console_handler)
     
-    # File handler (optional)
+    # File handler with rotation (optional)
     if log_file:
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         
-        file_handler = logging.FileHandler(log_file)
+        # Use RotatingFileHandler for automatic log rotation
+        # maxBytes=100MB, backupCount=5 (keeps 5 backup files)
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file, 
+            maxBytes=100 * 1024 * 1024,  # 100 MB
+            backupCount=5
+        )
         file_handler.setFormatter(file_formatter)
         root_logger.addHandler(file_handler)
     
