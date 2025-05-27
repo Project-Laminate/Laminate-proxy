@@ -139,6 +139,19 @@ class DicomServiceProvider:
             storage, self.query_handler, self.anonymization_utils, self.api_integration_utils, self.ae_config
         )
         
+        # Initialize node manager for automatic forwarding
+        if self.query_handler and self.api_integration_utils:
+            from dicom_receiver.core.node_manager import NodeManager
+            self.node_manager = NodeManager(
+                str(storage.storage_dir), 
+                self.query_handler, 
+                self.api_integration_utils
+            )
+            logger.info("NodeManager initialized for automatic forwarding")
+        else:
+            self.node_manager = None
+            logger.info("NodeManager disabled - no API access configured")
+        
         # Initialize auto-upload if enabled
         if auto_upload:
             self._setup_auto_upload(
@@ -328,6 +341,10 @@ class DicomServiceProvider:
         self.server_thread = threading.Thread(target=self._server_process, daemon=True)
         self.server_thread.start()
         
+        # Start automatic forwarding if node manager is available
+        if self.node_manager:
+            self.node_manager.start_auto_forwarding()
+        
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
         
@@ -346,6 +363,10 @@ class DicomServiceProvider:
             
         logger.info("Stopping DICOM receiver...")
         self.shutdown_event.set()
+        
+        # Stop automatic forwarding if node manager is available
+        if self.node_manager:
+            self.node_manager.stop_auto_forwarding()
         
         if self.server_thread and self.server_thread.is_alive():
             self.server_thread.join(5.0)

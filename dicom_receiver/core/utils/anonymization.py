@@ -32,26 +32,25 @@ class AnonymizationUtils:
         reverse_map = {v: k for k, v in self.encryptor.patient_name_map.items()}
         return reverse_map.get(anonymized_name, None)
     
-    def get_original_patient_id(self, anonymized_id):
-        """Get the original patient ID from anonymized ID"""
-        if not anonymized_id:
+    def get_original_patient_id(self, patient_id):
+        """Get the original patient ID from patient ID (handles both old and new anonymization)"""
+        if not patient_id:
             return None
         
-        # First try to find the original PatientID in the patient info map
+        # Check if this is an old anonymized ID (like "sub-001") that needs to be de-anonymized
         if hasattr(self.encryptor, 'patient_info_map'):
             for study_uid, patient_info in self.encryptor.patient_info_map.items():
-                if 'PatientID' in patient_info:
-                    # Check if this study has the anonymized ID we're looking for
-                    # by checking if the PatientName was anonymized to this value
-                    if 'PatientName' in patient_info:
-                        original_name = patient_info['PatientName']
-                        if original_name in self.encryptor.patient_name_map:
-                            if self.encryptor.patient_name_map[original_name] == anonymized_id:
-                                return patient_info['PatientID']
+                if 'PatientID' in patient_info and 'PatientName' in patient_info:
+                    original_name = patient_info['PatientName']
+                    # Check if the PatientName was anonymized to this patient_id value
+                    if (original_name in self.encryptor.patient_name_map and 
+                        self.encryptor.patient_name_map[original_name] == patient_id):
+                        # This is an old anonymized ID, return the original PatientID
+                        return patient_info['PatientID']
         
-        # Fallback: use the same logic as patient name (for backward compatibility)
-        reverse_map = {v: k for k, v in self.encryptor.patient_name_map.items()}
-        return reverse_map.get(anonymized_id, None)
+        # For new format or if not found in old format, return as-is
+        # This is the actual patient ID from the DICOM data
+        return patient_id
     
     def de_anonymize_dataset(self, dataset):
         """De-anonymize patient information in a DICOM dataset"""
@@ -71,13 +70,13 @@ class AnonymizationUtils:
                     dataset.PatientName = original_name
                     logger.debug(f"🔄 De-anonymized PatientName: {dataset.PatientName}")
             
-            # De-anonymize PatientID using the same logic as PatientName
-            # (since both are anonymized to the same value during anonymization)
+            # PatientID is no longer anonymized, so it should already be the original value
+            # But we still call get_original_patient_id for consistency and future compatibility
             if hasattr(dataset, 'PatientID'):
                 original_id = self.get_original_patient_id(str(dataset.PatientID))
                 if original_id:
                     dataset.PatientID = original_id
-                    logger.debug(f"🔄 De-anonymized PatientID: {dataset.PatientID}")
+                    logger.debug(f"🔄 Verified PatientID: {dataset.PatientID}")
             
             # Restore other anonymized fields from "ANON" to original values if available
             # Note: Since we only store patient name mapping, other fields remain "ANON"

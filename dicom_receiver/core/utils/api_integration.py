@@ -319,11 +319,23 @@ class ApiIntegrationUtils:
                 dataset.PatientName = original_name
                 logger.debug(f"De-anonymized PatientName: {str(dataset.PatientName)} -> {original_name}")
             
-            # De-anonymize PatientID if it exists and is anonymized
-            if hasattr(dataset, 'PatientID') and str(dataset.PatientID) in reverse_name_map:
-                original_id = reverse_name_map[str(dataset.PatientID)]
-                dataset.PatientID = original_id
-                logger.debug(f"De-anonymized PatientID: {str(dataset.PatientID)} -> {original_id}")
+            # Handle PatientID de-anonymization (supports both old and new formats)
+            if hasattr(dataset, 'PatientID'):
+                current_id = str(dataset.PatientID)
+                # Check if this might be an old anonymized ID that needs de-anonymization
+                if current_id in reverse_name_map:
+                    # This is an old anonymized ID, try to find the original
+                    if hasattr(self.query_handler, 'anonymizer') and hasattr(self.query_handler.anonymizer, 'patient_info_map'):
+                        for study_uid, patient_info in self.query_handler.anonymizer.patient_info_map.items():
+                            if ('PatientID' in patient_info and 'PatientName' in patient_info and
+                                patient_info['PatientName'] in self.query_handler.anonymizer.patient_name_map and
+                                self.query_handler.anonymizer.patient_name_map[patient_info['PatientName']] == current_id):
+                                dataset.PatientID = patient_info['PatientID']
+                                logger.debug(f"De-anonymized old PatientID: {current_id} -> {patient_info['PatientID']}")
+                                break
+                else:
+                    # New format - PatientID is already original
+                    logger.debug(f"PatientID (already original): {current_id}")
             
             # Try to restore other patient information from the anonymizer's mapping
             if hasattr(dataset, 'StudyInstanceUID'):

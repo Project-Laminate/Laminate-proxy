@@ -43,6 +43,7 @@ setup(
             'dicom-config=dicom_receiver.config:print_config',
             'dicom-upload=scripts.upload_study:main',
             'dicom-query=dicom_receiver.cli.query:main',
+            'dicom-nodes=dicom_receiver.cli.node_manager:main',
         ],
     },
     install_requires=[

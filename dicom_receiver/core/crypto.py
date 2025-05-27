@@ -153,13 +153,9 @@ class DicomAnonymizer:
                     # Use sequential naming for patient names
                     anonymized_value = self._get_anonymized_patient_name(value)
                 elif tag == 'PatientID':
-                    # Use the same anonymized name as PatientID for consistency
-                    if 'PatientName' in original_info:
-                        anonymized_value = self._get_anonymized_patient_name(original_info['PatientName'])
-                    elif hasattr(dataset, 'PatientName') and dataset.PatientName:
-                        anonymized_value = self._get_anonymized_patient_name(str(dataset.PatientName))
-                    else:
-                        anonymized_value = self._get_anonymized_patient_name(value)
+                    # Keep the original PatientID - don't anonymize it
+                    # This ensures proper patient identification when sending to nodes
+                    anonymized_value = value
                 else:
                     # For all other PII fields, use "ANON"
                     anonymized_value = "ANON"
