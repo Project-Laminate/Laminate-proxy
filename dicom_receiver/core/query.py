@@ -165,12 +165,29 @@ class DicomQueryHandler:
                 
             elif response.status_code == 401:
                 logger.warning("Authentication failed, attempting to re-authenticate")
+                # Clear the existing token to force fresh authentication
+                with self.api_uploader.auth_lock:
+                    self.api_uploader.auth_token = None
+                
                 if self.api_uploader.login():
                     # Retry with new token
                     headers['Authorization'] = f'Bearer {self.api_uploader.auth_token}'
                     response = requests.get(query_url, headers=headers, timeout=30)
                     if response.status_code == 200:
-                        data = response.json()
+                        # Handle JSON response with cleaning for retry
+                        response_text = response.text
+                        import re
+                        response_text = re.sub(r':\s*\*+', ': null', response_text)
+                        response_text = re.sub(r':\s*-?\d*\.\*+', ': null', response_text)
+                        response_text = re.sub(r':\s*-?\d+\.\*+', ': null', response_text)
+                        response_text = re.sub(r'[,\s]\*+[,\s]', ', null,', response_text)
+                        
+                        try:
+                            data = json.loads(response_text)
+                        except json.JSONDecodeError as e:
+                            logger.error(f"JSON decode error on retry: {e}")
+                            return None
+                        
                         deanonymized_data = self._deanonymize_patient_info(data)
                         return deanonymized_data
                 
@@ -226,6 +243,10 @@ class DicomQueryHandler:
                 
             elif response.status_code == 401:
                 logger.warning("Authentication failed, attempting to re-authenticate")
+                # Clear the existing token to force fresh authentication
+                with self.api_uploader.auth_lock:
+                    self.api_uploader.auth_token = None
+                
                 if self.api_uploader.login():
                     # Retry with new token
                     headers['Authorization'] = f'Bearer {self.api_uploader.auth_token}'

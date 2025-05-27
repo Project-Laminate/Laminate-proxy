@@ -64,7 +64,24 @@ class ApiIntegrationUtils:
             
             # Download the ZIP file
             response = requests.get(url, params=params, headers=headers, stream=True)
-            response.raise_for_status()
+            
+            # Handle authentication failure
+            if response.status_code == 401:
+                logger.warning("❌ Authentication failed during download, attempting to re-authenticate")
+                # Clear the existing token to force fresh authentication
+                with self.query_handler.api_uploader.auth_lock:
+                    self.query_handler.api_uploader.auth_token = None
+                
+                if self.query_handler._authenticate():
+                    # Retry with new token
+                    headers["Authorization"] = f"Bearer {self.query_handler.api_uploader.auth_token}"
+                    response = requests.get(url, params=params, headers=headers, stream=True)
+                    response.raise_for_status()
+                else:
+                    logger.error("❌ Re-authentication failed during download")
+                    return []
+            else:
+                response.raise_for_status()
             
             # Create temporary directory for extraction
             with tempfile.TemporaryDirectory() as temp_dir:
