@@ -474,6 +474,40 @@ class DicomStorage:
         
         return images
     
+    def get_image_files_for_series(self, study_uid: str, series_uid: str):
+        """
+        Get file paths for all images in a specific series
+        
+        Parameters:
+        -----------
+        study_uid : str
+            StudyInstanceUID
+        series_uid : str
+            SeriesInstanceUID
+            
+        Returns:
+        --------
+        List[str]: List of file paths to DICOM files in the series
+        """
+        image_files = []
+        
+        # Find the series directory
+        study_dir = self.get_study_path_by_uid(study_uid)
+        if not study_dir.exists():
+            return image_files
+        
+        series_dir = study_dir / series_uid
+        if not series_dir.exists():
+            return image_files
+        
+        scans_dir = series_dir / "scans"
+        if scans_dir.exists():
+            # Add all DICOM files in this series
+            for dcm_file in scans_dir.glob("*.dcm"):
+                image_files.append(str(dcm_file))
+        
+        return image_files
+
     def get_images_for_study(self, study_uid: str):
         """
         Get file paths for all images in a specific study

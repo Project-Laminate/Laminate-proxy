@@ -119,15 +119,16 @@ class MoveHandler:
             destination_ip, destination_port = self.ae_config.get_ae_address(move_destination)
             logger.info(f"🌐 Destination address: {destination_ip}:{destination_port}")
             
-            # Check if we have any files to move before yielding destination
-            # This prevents unnecessary connection attempts
-            temp_local_files = self._find_local_files(identifier, study_uid)
+            # Always use API since files are cleaned up after upload
+            # and API results are new/processed files that don't exist locally
             temp_api_files = []
-            if not temp_local_files and self.api_integration_utils:
-                logger.info("📡 No local files found, checking API...")
+            if self.api_integration_utils:
+                logger.info("📡 Downloading files from API...")
                 temp_api_files = self._find_api_files(identifier, study_uid)
+            else:
+                logger.warning("❌ No API access configured for download")
             
-            total_temp_files = len(temp_local_files) + len(temp_api_files)
+            total_temp_files = len(temp_api_files)
             
             if total_temp_files == 0:
                 logger.warning("❌ No matching files found for C-MOVE request")
@@ -136,14 +137,13 @@ class MoveHandler:
                 yield 0xA701  # Refused: Out of Resources - Unable to perform sub-operations
                 return
             
-            logger.info(f"📁 Found {total_temp_files} files to move ({len(temp_local_files)} local, {len(temp_api_files)} from API)")
+            logger.info(f"📁 Found {total_temp_files} files to move from API")
             logger.info(f"🚀 Initiating C-MOVE to {move_destination} at {destination_ip}:{destination_port}")
             
             # First yield the destination address (required by pynetdicom for C-MOVE)
             yield (destination_ip, destination_port)
             
             # Use the files we already found
-            local_files = temp_local_files
             api_files = temp_api_files
             total_files = total_temp_files
             
@@ -151,25 +151,6 @@ class MoveHandler:
             yield total_files
             
             sent_count = 0
-            
-            # Yield local files as datasets
-            for file_path in local_files:
-                try:
-                    # Read the DICOM dataset
-                    ds = dcmread(file_path)
-                    
-                    # De-anonymize patient information
-                    self.anonymization_utils.de_anonymize_dataset(ds)
-                    
-                    sent_count += 1
-                    logger.info(f"📤 Yielding local file {sent_count}/{total_files}: {Path(file_path).name}")
-                    
-                    # Yield the dataset - pynetdicom will handle the C-STORE
-                    yield 0xFF00, ds  # Pending with dataset
-                    
-                except Exception as e:
-                    logger.error(f"❌ Error processing local file {Path(file_path).name}: {e}")
-                    yield 0xB000  # Warning: Sub-operations Complete - One or more Failures
             
             # Yield API files as datasets
             for file_data in api_files:

@@ -155,7 +155,27 @@ class DicomQueryHandler:
                     logger.error(f"Error context: {response_text[max(0, e.pos-50):e.pos+50]}")
                     return None
                 
-                logger.info(f"Successfully retrieved metadata for {data.get('total_results_with_dicom', 0)} results")
+                # Validate the new API response structure
+                if not isinstance(data, dict):
+                    logger.error("API response is not a dictionary")
+                    return None
+                
+                if not data.get('success', False):
+                    logger.error(f"API returned success=false: {data}")
+                    return None
+                
+                # Log statistics from the new response format
+                total_results = data.get('total_results_with_dicom', 0)
+                total_processed = data.get('total_results_processed', 0)
+                skipped_duplicates = data.get('skipped_duplicates', 0)
+                
+                logger.info(f"Successfully retrieved metadata: {total_results} results with DICOM, "
+                           f"{total_processed} total processed, {skipped_duplicates} duplicates skipped")
+                
+                # Ensure results array exists
+                if 'results' not in data:
+                    logger.warning("No 'results' array in API response")
+                    data['results'] = []
                 
                 # De-anonymize the patient information
                 deanonymized_data = self._deanonymize_patient_info(data)
@@ -187,6 +207,14 @@ class DicomQueryHandler:
                         except json.JSONDecodeError as e:
                             logger.error(f"JSON decode error on retry: {e}")
                             return None
+                        
+                        # Validate retry response
+                        if not isinstance(data, dict) or not data.get('success', False):
+                            logger.error("Invalid API response on retry")
+                            return None
+                        
+                        if 'results' not in data:
+                            data['results'] = []
                         
                         deanonymized_data = self._deanonymize_patient_info(data)
                         return deanonymized_data

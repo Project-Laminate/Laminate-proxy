@@ -37,6 +37,10 @@ class StoreHandler:
         series_uid = dataset.SeriesInstanceUID
         instance_uid = dataset.SOPInstanceUID
         
+        # Log PatientID before processing
+        patient_id_before = getattr(dataset, 'PatientID', 'NOT_FOUND')
+        logger.info(f"📥 Storing DICOM - PatientID: '{patient_id_before}', Study: {study_uid}")
+        
         self.study_monitor.update_study_activity(study_uid)
         
         # Pass the dataset to get_file_path to determine the patient ID
@@ -48,6 +52,6 @@ class StoreHandler:
         # Save the file
         dataset.save_as(file_path)
         
-        logger.info(f"Stored DICOM file: {file_path}")
+        logger.info(f"✅ Stored DICOM file: {file_path}")
         
         return 0x0000 

@@ -131,7 +131,254 @@ class ApiIntegrationUtils:
         except Exception as e:
             logger.error(f"❌ Error downloading study from API: {e}")
             return []
-    
+
+    def download_series_from_api(self, result_id, series_uid, instance_filter=None):
+        """Download series ZIP from API and extract DICOM files"""
+        try:
+            # Ensure we have a valid authentication token
+            if not self.query_handler._authenticate():
+                logger.error("❌ Failed to authenticate for series download")
+                return []
+            
+            # Prepare download URL and headers
+            url = f"{self.api_url}/processing/results/{result_id}/download_dicom_series/"
+            params = {"series_uid": series_uid}
+            headers = {"Authorization": f"Bearer {self.query_handler.api_uploader.auth_token}"}
+            
+            logger.info(f"🌐 Downloading series from: {url}")
+            logger.info(f"📋 Parameters: {params}")
+            
+            # Download the ZIP file
+            response = requests.get(url, params=params, headers=headers, stream=True, timeout=300)
+            
+            # Handle authentication failure
+            if response.status_code == 401:
+                logger.warning("❌ Authentication failed during series download, attempting to re-authenticate")
+                # Clear the existing token to force fresh authentication
+                with self.query_handler.api_uploader.auth_lock:
+                    self.query_handler.api_uploader.auth_token = None
+                
+                if self.query_handler._authenticate():
+                    # Retry with new token
+                    headers["Authorization"] = f"Bearer {self.query_handler.api_uploader.auth_token}"
+                    response = requests.get(url, params=params, headers=headers, stream=True, timeout=300)
+                    response.raise_for_status()
+                else:
+                    logger.error("❌ Re-authentication failed during series download")
+                    return []
+            elif response.status_code != 200:
+                logger.error(f"❌ API returned status {response.status_code}: {response.text[:200]}")
+                return []
+            
+            # Check content type
+            content_type = response.headers.get('content-type', '').lower()
+            if 'application/zip' not in content_type and 'application/octet-stream' not in content_type:
+                logger.warning(f"⚠️ Unexpected content type: {content_type}")
+            
+            # Check content length
+            content_length = response.headers.get('content-length')
+            if content_length:
+                logger.info(f"📦 Expected download size: {int(content_length)} bytes")
+            else:
+                logger.warning("⚠️ No content-length header in response")
+            
+            # Create temporary directory for extraction
+            with tempfile.TemporaryDirectory() as temp_dir:
+                zip_path = Path(temp_dir) / "series.zip"
+                
+                # Save ZIP file
+                downloaded_size = 0
+                with open(zip_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:  # Filter out keep-alive chunks
+                            f.write(chunk)
+                            downloaded_size += len(chunk)
+                
+                actual_size = zip_path.stat().st_size
+                logger.info(f"📦 Downloaded series ZIP file: {actual_size} bytes")
+                
+                # Validate ZIP file
+                if actual_size == 0:
+                    logger.error("❌ Downloaded ZIP file is empty")
+                    return []
+                
+                # Check if it's a valid ZIP file
+                try:
+                    with zipfile.ZipFile(zip_path, 'r') as test_zip:
+                        test_zip.testzip()
+                    logger.info("✅ ZIP file validation passed")
+                except zipfile.BadZipFile as e:
+                    logger.error(f"❌ Invalid ZIP file: {e}")
+                    return []
+                except Exception as e:
+                    logger.error(f"❌ ZIP validation error: {e}")
+                    return []
+                
+                # Extract DICOM files
+                dicom_files = []
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    logger.info(f"📦 ZIP contains {len(zip_ref.filelist)} files")
+                    
+                    for file_info in zip_ref.filelist:
+                        # Skip directories
+                        if file_info.is_dir():
+                            continue
+                            
+                        # Check if it's a DICOM file (by extension or content)
+                        filename = file_info.filename.lower()
+                        if filename.endswith('.dcm') or filename.endswith('.dicom'):
+                            logger.debug(f"📄 Extracting DICOM file: {file_info.filename}")
+                            
+                            try:
+                                # Extract to temporary location
+                                extracted_path = zip_ref.extract(file_info, temp_dir)
+                                
+                                # Verify it's actually a DICOM file by trying to read it
+                                from pydicom import dcmread
+                                ds = dcmread(extracted_path, stop_before_pixels=True)
+                                
+                                # Apply instance filter if specified
+                                if instance_filter:
+                                    if getattr(ds, 'SOPInstanceUID', '') != instance_filter:
+                                        logger.debug(f"⏭️ Skipping file - SOP Instance UID doesn't match filter")
+                                        continue
+                                
+                                dicom_files.append(extracted_path)
+                                logger.debug(f"✅ Added DICOM file: {file_info.filename}")
+                                
+                            except Exception as e:
+                                logger.warning(f"⚠️ Could not process file {file_info.filename}: {e}")
+                                continue
+                        else:
+                            logger.debug(f"⏭️ Skipping non-DICOM file: {file_info.filename}")
+                
+                logger.info(f"📁 Successfully extracted {len(dicom_files)} valid DICOM files from series")
+                
+                # Read files into memory and apply de-anonymization
+                file_data = []
+                processed_count = 0
+                fallback_count = 0
+                
+                for i, file_path in enumerate(dicom_files, 1):
+                    try:
+                        logger.debug(f"📖 Processing DICOM file {i}/{len(dicom_files)}: {Path(file_path).name}")
+                        
+                        # Read the DICOM file
+                        from pydicom import dcmread
+                        ds = dcmread(file_path, force=True)
+                        
+                        # Log some basic info about the file
+                        patient_name = getattr(ds, 'PatientName', 'Unknown')
+                        sop_uid = getattr(ds, 'SOPInstanceUID', 'Unknown')
+                        logger.debug(f"   Patient: {patient_name}, SOP: {sop_uid[:20]}...")
+                        
+                        # Apply de-anonymization to restore original patient information
+                        self._deanonymize_dicom_dataset(ds)
+                        
+                        # Log after de-anonymization
+                        patient_name_after = getattr(ds, 'PatientName', 'Unknown')
+                        if patient_name != patient_name_after:
+                            logger.debug(f"   De-anonymized: {patient_name} -> {patient_name_after}")
+                        
+                        # Convert back to bytes
+                        from io import BytesIO
+                        buffer = BytesIO()
+                        ds.save_as(buffer)
+                        file_data.append(buffer.getvalue())
+                        processed_count += 1
+                        
+                    except Exception as e:
+                        logger.warning(f"⚠️ Error processing DICOM file {Path(file_path).name}: {e}")
+                        logger.warning(f"   Falling back to raw file read")
+                        
+                        try:
+                            # Fallback: read file as-is without de-anonymization
+                            with open(file_path, 'rb') as f:
+                                file_data.append(f.read())
+                            fallback_count += 1
+                        except Exception as e2:
+                            logger.error(f"❌ Failed to read file even as raw bytes: {e2}")
+                            continue
+                
+                logger.info(f"📊 Processing complete: {processed_count} de-anonymized, {fallback_count} fallback, {len(file_data)} total files")
+                return file_data
+                
+        except Exception as e:
+            logger.error(f"❌ Error downloading series from API: {e}")
+            return []
+
+    def _deanonymize_dicom_dataset(self, dataset):
+        """De-anonymize patient information in a DICOM dataset"""
+        try:
+            # Get the reverse mapping from anonymized names to original names
+            reverse_name_map = {v: k for k, v in self.query_handler.anonymizer.patient_name_map.items()}
+            
+            # De-anonymize PatientName if it exists and is anonymized
+            if hasattr(dataset, 'PatientName') and str(dataset.PatientName) in reverse_name_map:
+                original_name = reverse_name_map[str(dataset.PatientName)]
+                dataset.PatientName = original_name
+                logger.debug(f"De-anonymized PatientName: {str(dataset.PatientName)} -> {original_name}")
+            
+            # De-anonymize PatientID if it exists and is anonymized
+            if hasattr(dataset, 'PatientID') and str(dataset.PatientID) in reverse_name_map:
+                original_id = reverse_name_map[str(dataset.PatientID)]
+                dataset.PatientID = original_id
+                logger.debug(f"De-anonymized PatientID: {str(dataset.PatientID)} -> {original_id}")
+            
+            # Try to restore other patient information from the anonymizer's mapping
+            if hasattr(dataset, 'StudyInstanceUID'):
+                study_uid = str(dataset.StudyInstanceUID)
+                if study_uid in self.query_handler.anonymizer.patient_info_map:
+                    original_info = self.query_handler.anonymizer.patient_info_map[study_uid]
+                    
+                    # Restore other PII fields if they were anonymized
+                    for field_name, original_value in original_info.items():
+                        if hasattr(dataset, field_name) and str(getattr(dataset, field_name)) == "ANON":
+                            setattr(dataset, field_name, original_value)
+                            logger.debug(f"Restored {field_name}: ANON -> {original_value}")
+                            
+        except Exception as e:
+            logger.warning(f"⚠️ Error during de-anonymization: {e}")
+
+    def download_study_files(self, study_uid):
+        """Download files for a study (wrapper method for move handler compatibility)"""
+        try:
+            result_id = self.get_result_id_for_study(study_uid)
+            if not result_id:
+                logger.warning(f"❌ No result_id found for study: {study_uid}")
+                return []
+            
+            return self.download_study_from_api(result_id, study_uid)
+        except Exception as e:
+            logger.error(f"❌ Error downloading study files for {study_uid}: {e}")
+            return []
+
+    def download_series_files(self, series_uid, study_uid):
+        """Download files for a series (wrapper method for move handler compatibility)"""
+        try:
+            result_id = self.get_result_id_for_study(study_uid)
+            if not result_id:
+                logger.warning(f"❌ No result_id found for study: {study_uid}")
+                return []
+            
+            return self.download_series_from_api(result_id, series_uid)
+        except Exception as e:
+            logger.error(f"❌ Error downloading series files for {series_uid}: {e}")
+            return []
+
+    def download_image_files(self, sop_uid, series_uid, study_uid):
+        """Download files for a specific image (wrapper method for move handler compatibility)"""
+        try:
+            result_id = self.get_result_id_for_study(study_uid)
+            if not result_id:
+                logger.warning(f"❌ No result_id found for study: {study_uid}")
+                return []
+            
+            return self.download_series_from_api(result_id, series_uid, instance_filter=sop_uid)
+        except Exception as e:
+            logger.error(f"❌ Error downloading image files for {sop_uid}: {e}")
+            return []
+
     def extract_patients_from_api_data(self, api_data, anonymization_utils):
         """Extract unique patients from API data with de-anonymization"""
         unique_patients = {}
@@ -254,4 +501,4 @@ class ApiIntegrationUtils:
                                         'InstanceNumber': instance_info.get('instance_number', '')
                                     }
         
-        return list(unique_images.values()) 
+        return list(unique_images.values())

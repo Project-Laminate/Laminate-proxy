@@ -167,13 +167,6 @@ class GetHandler:
         
         logger.info(f"🔍 Getting files for study: {study_uid}")
         
-        # First check if we have it locally
-        local_files = self.storage.get_images_for_study(study_uid)
-        if local_files:
-            logger.info(f"📁 Found {len(local_files)} local files for study")
-            return local_files
-        
-        # Download from API if not local
         if not self.query_handler or not self.api_integration_utils:
             logger.warning("❌ No API access configured for download")
             return []
@@ -211,13 +204,6 @@ class GetHandler:
         
         logger.info(f"🔍 Getting files for series: {series_uid} from study: {study_uid}")
         
-        # Check local storage first
-        local_files = self.storage.get_images_for_series(study_uid, series_uid)
-        if local_files:
-            logger.info(f"📁 Found {len(local_files)} local files for series")
-            return local_files
-        
-        # Download from API - get the whole study and filter for this series
         if not self.query_handler or not self.api_integration_utils:
             logger.warning("❌ No API access configured for download")
             return []
@@ -228,11 +214,9 @@ class GetHandler:
                 logger.warning(f"❌ No result_id found for study: {study_uid}")
                 return []
             
-            # Download the study and filter for the specific series
-            logger.info(f"🌐 Downloading study from API and filtering for series")
-            dicom_files = self.api_integration_utils.download_study_from_api(
-                result_id, study_uid, series_filter=series_uid
-            )
+            # Download the series directly using the series endpoint
+            logger.info(f"🌐 Downloading series from API (result_id: {result_id})")
+            dicom_files = self.api_integration_utils.download_series_from_api(result_id, series_uid)
             
             if not dicom_files:
                 logger.warning(f"❌ No files found for series: {series_uid}")
@@ -246,7 +230,7 @@ class GetHandler:
             return []
     
     def _get_image_files(self, query_ds):
-        """Get a specific image file"""
+        """Get specific image files (handles both single and multiple SOP Instance UIDs)"""
         study_uid = getattr(query_ds, 'StudyInstanceUID', None)
         series_uid = getattr(query_ds, 'SeriesInstanceUID', None)
         sop_uid = getattr(query_ds, 'SOPInstanceUID', None)
@@ -255,15 +239,16 @@ class GetHandler:
             logger.warning("❌ StudyInstanceUID, SeriesInstanceUID, and SOPInstanceUID required for IMAGE C-GET")
             return []
         
-        logger.info(f"🔍 Getting image: {sop_uid}")
+        # Handle multi-value SOP Instance UIDs
+        if hasattr(sop_uid, '__iter__') and not isinstance(sop_uid, str):
+            # Multiple SOP Instance UIDs - convert to list
+            sop_uids = list(sop_uid)
+            logger.info(f"🔍 Getting {len(sop_uids)} images from series: {series_uid}")
+        else:
+            # Single SOP Instance UID
+            sop_uids = [str(sop_uid)]
+            logger.info(f"🔍 Getting image: {sop_uid}")
         
-        # Check local storage first
-        local_file = self.storage.get_file_path(study_uid, series_uid, sop_uid)
-        if local_file.exists():
-            logger.info(f"📁 Found local file: {local_file}")
-            return [str(local_file)]
-        
-        # Download from API - get the whole study and filter for this instance
         if not self.query_handler or not self.api_integration_utils:
             logger.warning("❌ No API access configured for download")
             return []
@@ -274,21 +259,44 @@ class GetHandler:
                 logger.warning(f"❌ No result_id found for study: {study_uid}")
                 return []
             
-            # Download the study and filter for the specific instance
-            logger.info(f"🌐 Downloading study from API and filtering for instance")
-            dicom_files = self.api_integration_utils.download_study_from_api(
-                result_id, study_uid, instance_filter=sop_uid
+            # Download the entire series from API (more efficient than individual downloads)
+            logger.info(f"🌐 Downloading series from API to get requested instances")
+            dicom_files = self.api_integration_utils.download_series_from_api(
+                result_id, series_uid
             )
             
             if not dicom_files:
-                logger.warning(f"❌ Instance not found: {sop_uid}")
+                logger.warning(f"❌ No files downloaded from API for series: {series_uid}")
                 return []
             
-            logger.info(f"📤 Downloaded instance from API")
-            return dicom_files
+            # Filter the downloaded files to only include the requested SOP Instance UIDs
+            filtered_files = []
+            for file_data in dicom_files:
+                try:
+                    # If file_data is bytes, we need to read it to check SOP Instance UID
+                    if isinstance(file_data, bytes):
+                        from pydicom import dcmread
+                        from io import BytesIO
+                        ds = dcmread(BytesIO(file_data), stop_before_pixels=True)
+                        file_sop_uid = getattr(ds, 'SOPInstanceUID', None)
+                        if file_sop_uid in sop_uids:
+                            filtered_files.append(file_data)
+                    else:
+                        # If it's a file path, add it (assume it's already filtered)
+                        filtered_files.append(file_data)
+                except Exception as e:
+                    logger.warning(f"Error checking SOP Instance UID in downloaded file: {e}")
+                    continue
+            
+            if filtered_files:
+                logger.info(f"📤 Downloaded {len(filtered_files)} matching instances from API")
+                return filtered_files
+            else:
+                logger.warning(f"❌ No matching instances found in downloaded series")
+                return []
             
         except Exception as e:
-            logger.error(f"❌ Error downloading instance {sop_uid}: {e}")
+            logger.error(f"❌ Error downloading instances: {e}")
             return []
     
     def _load_dataset_from_file(self, file_path, preferred_syntax):
