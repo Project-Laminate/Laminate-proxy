@@ -5,7 +5,7 @@ Query module for the DICOM receiver
 Handles API queries and de-anonymization of response data
 """
 
-import json
+from dicom_receiver.utils import json_utils as json
 import logging
 import requests
 from typing import Dict, List, Optional, Any
@@ -260,7 +260,7 @@ class DicomQueryHandler:
             response = requests.get(query_url, headers=headers, timeout=30)
             
             if response.status_code == 200:
-                data = response.json()
+                data = json.loads(response.text)
                 logger.info(f"Successfully retrieved metadata for result {result_id}")
                 
                 # De-anonymize the patient information
@@ -280,7 +280,7 @@ class DicomQueryHandler:
                     headers['Authorization'] = f'Bearer {self.api_uploader.auth_token}'
                     response = requests.get(query_url, headers=headers, timeout=30)
                     if response.status_code == 200:
-                        data = response.json()
+                        data = json.loads(response.text)
                         deanonymized_data = self._deanonymize_patient_info(data)
                         return deanonymized_data
                 

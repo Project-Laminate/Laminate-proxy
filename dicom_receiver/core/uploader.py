@@ -6,7 +6,7 @@ Handles authentication and upload of zipped DICOM studies to remote API
 """
 
 import os
-import json
+from dicom_receiver.utils import json_utils as json
 import logging
 import zipfile
 import requests
@@ -81,7 +81,7 @@ class ApiUploader:
                     )
                     
                     if response.status_code == 200:
-                        auth_data = response.json()
+                        auth_data = json.loads(response.text)
                         self.auth_token = auth_data.get("access")
                         self.user_info = auth_data.get("user")
                         logger.info(f"Successfully authenticated as {self.username}")
@@ -210,7 +210,7 @@ class ApiUploader:
                 
                 if upload_success and 'application/json' in response.headers.get('Content-Type', ''):
                     try:
-                        response_data = response.json()
+                        response_data = json.loads(response.text)
                         logger.info(f"Dataset uploaded with ID: {response_data.get('id')}")
                     except json.JSONDecodeError:
                         logger.warning("Unable to parse JSON response")

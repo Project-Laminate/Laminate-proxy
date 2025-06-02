@@ -6,7 +6,7 @@ This CLI allows users to query the API for DICOM metadata and get de-anonymized 
 """
 
 import argparse
-import json
+from dicom_receiver.utils import json_utils as json
 import logging
 from pathlib import Path
 

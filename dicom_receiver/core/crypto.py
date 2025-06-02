@@ -5,7 +5,7 @@ Anonymization utilities for DICOM patient information
 This module handles anonymization operations for protecting patient data
 """
 
-import json
+from dicom_receiver.utils import json_utils as json
 import logging
 from pathlib import Path
 from typing import Dict, Optional

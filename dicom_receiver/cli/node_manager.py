@@ -6,7 +6,7 @@ This CLI allows users to manage node configurations and monitor forwarding statu
 """
 
 import argparse
-import json
+from dicom_receiver.utils import json_utils as json
 import logging
 from pathlib import Path
 

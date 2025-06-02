@@ -6,7 +6,7 @@ Manages node configurations and automatically forwards new series from API
 to configured DICOM nodes with duplicate prevention.
 """
 
-import json
+from dicom_receiver.utils import json_utils as json
 import logging
 import threading
 import time

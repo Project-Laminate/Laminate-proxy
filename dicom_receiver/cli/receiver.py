@@ -7,7 +7,7 @@ This is the main entry point for starting the DICOM receiver service.
 
 import argparse
 import logging
-import json
+from dicom_receiver.utils import json_utils as json
 from pathlib import Path
 
 from dicom_receiver.config import (
