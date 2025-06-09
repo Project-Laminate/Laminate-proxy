@@ -2,10 +2,7 @@
 
 This guide explains how to run the DICOM Receiver application using Docker.
 
-## Prerequisites
-
-- Docker and Docker Compose installed on your system
-- Basic knowledge of Docker and containerization
+**Before you start:** Create an account on https://dev-laminate.nyuad.nyu.edu/
 
 ## Quick Start
 
@@ -38,6 +35,10 @@ docker-compose up -d
 ```bash
 docker-compose logs -f
 ```
+
+5. Setup Laminate DICOM Receiver on your PACS with the settings from the `.env` file
+
+
 
 ---
 
