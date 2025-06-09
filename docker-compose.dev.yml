@@ -5,7 +5,7 @@ services:
     build: .
     platform: linux/amd64
     ports:
-      - "${DICOM_RECEIVER_PORT:-11112}:11112"
+      - "${DICOM_RECEIVER_PORT:-11112}:${DICOM_RECEIVER_PORT:-11112}"
     volumes:
       - ./data/storage:/data/storage
       - ./data/zips:/data/zips

@@ -16,7 +16,7 @@ RUN pip install -e .
 RUN mkdir -p /data/storage /data/zips /data/logs
 
 # Expose the DICOM port
-EXPOSE 11112
+EXPOSE DICOM_RECEIVER_PORT
 
 # Set environment variables
 ENV DICOM_RECEIVER_STORAGE_DIR=/data/storage
