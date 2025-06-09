@@ -19,12 +19,9 @@ A secure DICOM receiver service for hospital use that receives DICOM images, org
 - Automatic cleanup of transmitted data
 - Command-line tools for all operations
 
-## Installation
+Please read the [Docker setup guide](README-docker.md) for installation and configuration instructions.
 
-```bash
-# Install from the repository
-pip install -e .
-```
+---
 
 ## Configuration
 
@@ -66,7 +63,7 @@ The application supports a flexible configuration system with three levels of pr
 dicom-receiver
 
 # Start with custom settings
-dicom-receiver --port 11112 --storage /path/to/storage --ae-title MYAETITLE
+dicom-receiver --port DICOM_RECEIVER_PORT --storage DICOM_RECEIVER_STORAGE_DIR --ae-title DICOM_RECEIVER_AE_TITLE
 
 # Start with automatic upload to API
 dicom-receiver --auto-upload --api-url http://example.com/api --api-username user --api-password pass
