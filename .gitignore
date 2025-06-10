@@ -22,7 +22,6 @@ ENV/
 *.swo
 
 # Project-specific
-data/
 encryption_key.key
 patient_info_map.json
 *.dcm

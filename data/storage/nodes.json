@@ -1,0 +1,18 @@
+{
+    "nodes": {
+      "PACS-NAME": {
+        "name": "PACS-NAME",
+        "ip": "id-address-of-PACS",
+        "port": 11116,
+        "aet": "AET-of-PACS",
+        "enabled": true,
+        "description": "description of PACS"
+      }
+    },
+    "settings": {
+      "polling_interval": 60,
+      "max_retry_attempts": 3,
+      "retry_delay": 5,
+      "auto_forward_enabled": true
+    }
+  }
