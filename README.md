@@ -19,7 +19,12 @@ A secure DICOM receiver service for hospital use that receives DICOM images, org
 - Automatic cleanup of transmitted data
 - Command-line tools for all operations
 
-Please read the [Docker setup guide](README-docker.md) for installation and configuration instructions.
+## Installation
+
+Choose your installation method:
+
+- **Docker Installation**: Read the [Docker setup guide](README-docker.md) for containerized deployment
+- **Local Installation**: Read the [Local setup guide](README-local.md) for conda/pip-based installation (ideal for hospital computers without Docker)
 
 ---
 

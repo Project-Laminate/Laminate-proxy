@@ -22,21 +22,28 @@ DICOM_RECEIVER_API_PASSWORD=your_password
 # Enable auto-upload if desired
 DICOM_RECEIVER_AUTO_UPLOAD=true
 ```
-3. Edit the `data/storage/nodes.json` file to customize the configuration of your PACS.
 
-4. Build and start the Docker container:
+3. Source the environment variables to ensure they are loaded (optional, as docker-compose will read the .env file automatically):
+
+```bash
+set -a && source .env && set +a
+```
+
+4. Edit the `data/storage/nodes.json` file to customize the configuration of your PACS.
+
+5. Build and start the Docker container:
 
 ```bash
 docker-compose up -d
 ```
 
-4. Check the logs to verify everything is working:
+6. Check the logs to verify everything is working:
 
 ```bash
 docker-compose logs -f
 ```
 
-5. Setup Laminate DICOM Receiver on your PACS with the settings from the `.env` file
+7. Setup Laminate DICOM Receiver on your PACS with the settings from the `.env` file
 
 
 
