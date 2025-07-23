@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from pydicom.uid import ExplicitVRLittleEndian, ImplicitVRLittleEndian
-from pynetdicom import AE, evt, StoragePresentationContexts
+from pynetdicom import AE, evt, StoragePresentationContexts, _config
 from pynetdicom.sop_class import (
     Verification,
     StudyRootQueryRetrieveInformationModelFind,
@@ -239,6 +239,10 @@ class DicomServiceProvider:
     def _server_process(self):
         """Run the DICOM server in a separate thread"""
         try:
+            # Configure pynetdicom to handle both ASCII and UTF-8 encodings
+            # This fixes issues with OsiriX/Horos and other DICOM viewers that may send UTF-8 encoded strings
+            _config.CODECS = ("ascii", "utf-8")
+            
             self.ae = AE(ae_title=self.ae_title)
             
             # Add storage presentation contexts with both SCP and SCU roles
