@@ -241,7 +241,7 @@ class DicomServiceProvider:
         try:
             # Configure pynetdicom to handle both ASCII and UTF-8 encodings
             # This fixes issues with OsiriX/Horos and other DICOM viewers that may send UTF-8 encoded strings
-            _config.CODECS = ("ascii", "utf-8")
+            # _config.CODECS = ("ascii", "utf-8")
             
             self.ae = AE(ae_title=self.ae_title)
             

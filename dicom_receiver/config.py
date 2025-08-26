@@ -7,6 +7,10 @@ Contains default settings and configuration options with environment variable su
 
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Helper function to get config values from environment variables with fallbacks
 def get_env_or_default(env_name, default_value):
@@ -57,7 +61,7 @@ DEFAULT_PII_TAGS = [
 
 PII_TAGS = ENV_PII_TAGS.split(',') if ENV_PII_TAGS else DEFAULT_PII_TAGS
 
-PATIENT_INFO_MAP_FILENAME = get_env_or_default('DICOM_RECEIVER_MAP_FILENAME', get_data_path('patient_info_map.json'))
+PATIENT_INFO_MAP_FILENAME = get_env_or_default('DICOM_RECEIVER_MAP_FILENAME', 'patient_info_map.json')
 
 # Helper functions for configuration
 def get_config_dict():

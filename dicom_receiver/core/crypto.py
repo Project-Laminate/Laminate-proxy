@@ -156,6 +156,15 @@ class DicomAnonymizer:
                     # Keep the original PatientID - don't anonymize it
                     # This ensures proper patient identification when sending to nodes
                     anonymized_value = value
+                elif tag == 'PatientBirthDate':
+                    # Use anonymous date in DICOM DA format (YYYYMMDD)
+                    anonymized_value = "19000101"
+                elif tag in ['StudyDate', 'SeriesDate', 'InstanceCreationDate', 'ContentDate', 'AcquisitionDate']:
+                    # Use anonymous date for other date fields
+                    anonymized_value = "19000101"
+                elif tag in ['StudyTime', 'SeriesTime', 'InstanceCreationTime', 'ContentTime', 'AcquisitionTime']:
+                    # Use anonymous time in DICOM TM format (HHMMSS)
+                    anonymized_value = "000000"
                 else:
                     # For all other PII fields, use "ANON"
                     anonymized_value = "ANON"

@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 
 # Distribution / packaging
+.DS_store
 dist/
 build/
 *.egg-info/
@@ -24,6 +25,7 @@ ENV/
 # Project-specific
 encryption_key.key
 patient_info_map.json
+forwarding_tracking.json
 *.dcm
 *.log 
 *.zip

@@ -280,6 +280,9 @@ class ApiIntegrationUtils:
                         if patient_name != patient_name_after:
                             logger.debug(f"   De-anonymized: {patient_name} -> {patient_name_after}")
                         
+                        # Ensure proper DICOM file metadata for pixel data accessibility
+                        self._fix_dicom_file_metadata(ds)
+                        
                         # Convert back to bytes
                         from io import BytesIO
                         buffer = BytesIO()
@@ -345,12 +348,58 @@ class ApiIntegrationUtils:
                     
                     # Restore other PII fields if they were anonymized
                     for field_name, original_value in original_info.items():
-                        if hasattr(dataset, field_name) and str(getattr(dataset, field_name)) == "ANON":
+                        current_value = str(getattr(dataset, field_name)) if hasattr(dataset, field_name) else ""
+                        
+                        # Check for various anonymized values
+                        if (current_value == "ANON" or 
+                            current_value == "19000101" or  # Anonymous date
+                            current_value == "000000"):     # Anonymous time
                             setattr(dataset, field_name, original_value)
-                            logger.debug(f"Restored {field_name}: ANON -> {original_value}")
+                            logger.debug(f"Restored {field_name}: {current_value} -> {original_value}")
                             
         except Exception as e:
             logger.warning(f"⚠️ Error during de-anonymization: {e}")
+
+    def _fix_dicom_file_metadata(self, dataset):
+        """Fix DICOM file metadata to ensure pixel data accessibility"""
+        try:
+            import pydicom
+            from pydicom.uid import ImplicitVRLittleEndian, ExplicitVRLittleEndian
+            
+            # Ensure file_meta exists
+            if not hasattr(dataset, 'file_meta') or dataset.file_meta is None:
+                dataset.file_meta = pydicom.dataset.FileMetaDataset()
+            
+            # CRITICAL: Preserve original TransferSyntaxUID if it exists
+            # Only set a default if completely missing
+            if not hasattr(dataset.file_meta, 'TransferSyntaxUID') or dataset.file_meta.TransferSyntaxUID is None:
+                # No transfer syntax specified - use default
+                preferred_syntax = ExplicitVRLittleEndian
+                dataset.file_meta.TransferSyntaxUID = preferred_syntax
+                logger.debug(f"No TransferSyntaxUID found, setting default: {preferred_syntax}")
+            else:
+                # Preserve the original transfer syntax
+                preferred_syntax = dataset.file_meta.TransferSyntaxUID
+                logger.debug(f"Preserving original TransferSyntaxUID: {preferred_syntax}")
+            
+            # Set transfer syntax and encoding based on the actual transfer syntax
+            dataset.is_little_endian = preferred_syntax in [
+                ImplicitVRLittleEndian,
+                ExplicitVRLittleEndian
+            ]
+            dataset.is_implicit_VR = preferred_syntax == ImplicitVRLittleEndian
+            
+            # Ensure all required file meta elements are present
+            dataset.file_meta.MediaStorageSOPClassUID = dataset.SOPClassUID
+            dataset.file_meta.MediaStorageSOPInstanceUID = dataset.SOPInstanceUID
+            dataset.file_meta.ImplementationClassUID = pydicom.uid.PYDICOM_IMPLEMENTATION_UID
+            dataset.file_meta.ImplementationVersionName = "PYDICOM"
+            
+            # Set the file meta information version
+            dataset.file_meta.FileMetaInformationVersion = b'\x00\x01'
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Error fixing DICOM file metadata: {e}")
 
     def download_study_files(self, study_uid):
         """Download files for a study (wrapper method for move handler compatibility)"""
